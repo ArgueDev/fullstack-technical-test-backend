@@ -22,7 +22,7 @@ export const createEvent = async (data: CreateEventInput) => {
 
 export const updateEvent = async ( id: string, data: UpdateEventInput ) => {
   return EventModel.findByIdAndUpdate(id, data, {
-    new: true,
+    returnDocument: 'after',
     runValidators: true,
   });
 };
