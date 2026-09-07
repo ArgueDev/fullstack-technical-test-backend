@@ -1,0 +1,60 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: ticket-reservation-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo-init:
+    image: mongo:7.0
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        mongosh --host mongodb:27017 --eval '
+          try {
+            rs.status()
+          } catch (err) {
+            rs.initiate({
+              _id: "rs0",
+              members: [{ _id: 0, host: "mongodb:27017" }]
+            })
+          }
+        '
+
+        until mongosh --host mongodb:27017 --quiet --eval 'quit(rs.status().myState === 1 ? 0 : 1)'; do
+          sleep 1
+        done
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ticket-reservation-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      MONGODB_URI: mongodb://mongodb:27017/ticket-reservation?replicaSet=rs0&directConnection=true
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      JWT_SECRET: ${JWT_SECRET}
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+
+volumes:
+  mongodb_data:
