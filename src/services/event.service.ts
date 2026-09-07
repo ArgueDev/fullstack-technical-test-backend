@@ -1,3 +1,5 @@
+import mongoose from 'mongoose';
+import ReservationModel from '../models/reservation.model.js';
 import EventModel, { type Event } from '../models/event.model.js';
 
 type CreateEventInput = Pick<
@@ -28,5 +30,18 @@ export const updateEvent = async ( id: string, data: UpdateEventInput ) => {
 };
 
 export const deleteEvent = async (id: string) => {
-  return EventModel.findByIdAndDelete(id);
+  const session = await mongoose.startSession();
+  try {
+    return await session.withTransaction(async () => {
+      const event = await EventModel.findById(id).session(session);
+      if (!event) return null;
+
+      const hasReservations = await ReservationModel.exists({ eventId: id }).session(session);
+      if (hasReservations) throw new Error('EVENT_HAS_RESERVATIONS');
+
+      return EventModel.findByIdAndDelete(id).session(session);
+    });
+  } finally {
+    await session.endSession();
+  }
 };

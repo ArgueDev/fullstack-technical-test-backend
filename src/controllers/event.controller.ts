@@ -125,6 +125,13 @@ export const removeEvent = async ( req: Request, res: Response ): Promise<void> 
 
     res.status(204).send();
   } catch (error) {
+    if (error instanceof Error && error.message === 'EVENT_HAS_RESERVATIONS') {
+      res.status(409).json({
+        message: 'No se puede eliminar el evento porque tiene reservas asociadas',
+      });
+      return;
+    }
+
     res.status(500).json({
       message: 'Error al eliminar el evento',
     });
