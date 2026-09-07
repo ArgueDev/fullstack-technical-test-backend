@@ -1,13 +1,13 @@
-# Ticket Reservation System - Backend
+# Sistema de Reserva de Entradas — Backend
 
-Backend desarrollado para la prueba técnica de **Fullstack Software Developer**.
+API REST desarrollada para un sistema de reserva de entradas para eventos como parte de una prueba técnica Fullstack.
 
-La aplicación proporciona una API REST para gestionar eventos, autenticación de usuarios y reservas de tickets, utilizando Node.js, Express, TypeScript y MongoDB.
+El backend permite gestionar eventos, autenticar usuarios, realizar reservas y administrar la disponibilidad de entradas.
 
 ## Tecnologías
 
 - Node.js
-- Express
+- Express.js
 - TypeScript
 - MongoDB
 - Mongoose
@@ -22,33 +22,49 @@ La aplicación proporciona una API REST para gestionar eventos, autenticación d
 
 ### Eventos
 
-- Listar todos los eventos disponibles.
-- Obtener los detalles de un evento por ID.
+- Listar eventos disponibles.
+- Consultar el detalle de un evento.
 - Crear eventos.
 - Actualizar eventos.
 - Eliminar eventos.
-- Controlar la disponibilidad de tickets.
+- Controlar la disponibilidad de entradas.
+- Impedir la eliminación de eventos que tengan reservas asociadas.
 
 ### Autenticación
 
 - Registro de usuarios.
 - Inicio de sesión.
 - Autenticación mediante JWT.
-- Manejo de roles `user` y `admin`.
-
-Los usuarios registrados mediante la API son creados con rol `user`.
+- Roles `user` y `admin`.
+- Protección de rutas administrativas.
 
 ### Reservas
 
-- Crear reservas para eventos.
-- Validar la cantidad de tickets solicitados.
-- Validar la disponibilidad antes de realizar una reserva.
-- Obtener la identidad del usuario desde el token JWT.
-- Reducir automáticamente los tickets disponibles.
-- Utilizar transacciones de MongoDB para mantener la consistencia entre la reserva y la disponibilidad del evento.
-- Evitar sobreventa mediante actualización atómica de tickets.
+- Crear reservas para un evento.
+- Validar la cantidad de entradas disponibles.
+- Actualizar la disponibilidad del evento de forma atómica.
+- Evitar reservas cuando no existen entradas suficientes.
+- Consultar las reservas del usuario autenticado.
 
-## Estructura del proyecto
+## Arquitectura
+
+El backend utiliza una arquitectura por capas:
+
+```text
+Routes
+  ↓
+Middlewares
+  ↓
+Controllers
+  ↓
+Services
+  ↓
+Models
+  ↓
+MongoDB
+```
+
+Estructura principal:
 
 ```text
 src/
@@ -62,27 +78,41 @@ src/
 ├── utils/
 ├── app.ts
 └── server.ts
-
-test/
-├── auth.test.ts
-├── jwt.test.ts
-└── reservation.service.test.ts
 ```
 
-El proyecto utiliza una separación de responsabilidades basada en rutas, controladores, servicios, modelos y middlewares.
+Esta separación permite mantener independientes las responsabilidades relacionadas con HTTP, lógica de negocio, seguridad y persistencia.
 
-## Requisitos
+## Endpoints principales
 
-### Ejecución local
+### Autenticación
 
-- Node.js
-- pnpm
-- MongoDB
+| Método | Endpoint | Descripción | Acceso |
+|---|---|---|---|
+| POST | `/auth/register` | Registrar usuario | Público |
+| POST | `/auth/login` | Iniciar sesión | Público |
 
-### Ejecución con contenedores
+### Eventos
 
-- Docker
-- Docker Compose
+| Método | Endpoint | Descripción | Acceso |
+|---|---|---|---|
+| GET | `/events` | Listar eventos | Público |
+| GET | `/events/:id` | Obtener evento | Público |
+| POST | `/events` | Crear evento | Admin |
+| PUT | `/events/:id` | Actualizar evento | Público |
+| DELETE | `/events/:id` | Eliminar evento | Admin |
+
+Un evento que tenga reservas asociadas no puede ser eliminado. En este caso la API responde con `409 Conflict`.
+
+### Reservas
+
+| Método | Endpoint | Descripción | Acceso |
+|---|---|---|---|
+| POST | `/reservations` | Crear reserva | Autenticado |
+| GET | `/reservations/me` | Obtener mis reservas | Autenticado |
+
+La identidad del usuario se obtiene de `req.user`, establecido por el middleware a partir del JWT y del usuario almacenado, no desde un `userId` enviado por el cliente.
+
+`GET /reservations/me` devuelve un array ordenado por `createdAt` descendente (y `_id` como desempate), con `id`, `quantity`, `createdAt` y `eventId` poblado con `id`, `name`, `date` y `location`. Sin reservas devuelve `[]`; una referencia a un evento inexistente se representa como `eventId: null`. Las fechas de evento se serializan como `YYYY-MM-DD`.
 
 ## Variables de entorno
 
@@ -90,36 +120,171 @@ Crear un archivo `.env` tomando como referencia `.env.example`.
 
 ```env
 PORT=3000
-MONGODB_URI=
+MONGODB_URI=mongodb://localhost:27017/ticket-reservation?replicaSet=rs0&directConnection=true
 FRONTEND_URL=http://localhost:5173
-JWT_SECRET=
+JWT_SECRET=your_secure_secret
 ```
 
-Las credenciales y secretos reales no deben almacenarse en el repositorio.
+El archivo `.env` no debe subirse al repositorio.
 
-## Instalación local
+## Ejecución local
 
-Instalar las dependencias:
+Instalar dependencias:
 
 ```bash
 pnpm install
 ```
 
-Ejecutar el proyecto en modo desarrollo:
+Ejecutar el servidor:
 
 ```bash
 pnpm dev
 ```
 
-El backend estará disponible en:
+La API estará disponible en:
 
 ```text
 http://localhost:3000
 ```
 
-## Compilar el proyecto
+Para la ejecución local, MongoDB debe ser un replica set inicializado (o un clúster compatible con transacciones), no una instancia standalone: tanto crear reservas como eliminar eventos utilizan transacciones. El ejemplo anterior presupone un replica set `rs0` accesible en localhost. Ajusta `MONGODB_URI` a tu entorno; `.env.example` contiene una URI de ejemplo que debe revisarse. Docker Compose configura el replica set automáticamente.
 
-Generar el build de producción:
+Antes de `pnpm dev`, copia `.env.example` a `.env` y configura las variables. `FRONTEND_URL` define el origen permitido por CORS; `PORT` usa 3000 por defecto y `JWT_SECRET` debe reemplazarse por un valor propio, nunca el texto de ejemplo.
+
+## Ejecución completa con Docker
+
+La forma recomendada de ejecutar el proyecto completo es mediante Docker Compose.
+
+El `compose.yaml` del backend levanta:
+
+- MongoDB.
+- Inicialización del Replica Set.
+- Backend.
+- Frontend.
+
+### Estructura de directorios
+
+Los repositorios de frontend y backend deben encontrarse como carpetas hermanas:
+
+```text
+project/
+├── fullstack-technical-test-backend/
+└── fullstack-technical-test-frontend/
+```
+
+Desde el backend:
+
+```bash
+cp .env.example .env
+```
+
+Configurar un `JWT_SECRET` válido y ejecutar:
+
+```bash
+docker compose up --build
+```
+
+Una vez iniciado:
+
+```text
+Frontend: http://localhost:5173
+Backend:  http://localhost:3000
+MongoDB:  localhost:27017
+```
+
+Para ejecutar los contenedores en segundo plano:
+
+```bash
+docker compose up --build -d
+```
+
+Para detenerlos:
+
+```bash
+docker compose down
+```
+
+Los datos de MongoDB se mantienen mediante un volumen de Docker.
+
+Para detener los servicios y eliminar también el volumen:
+
+```bash
+docker compose down -v
+```
+
+> Este último comando elimina los datos almacenados en MongoDB.
+
+## MongoDB y transacciones
+
+MongoDB se ejecuta como un Replica Set de un nodo (`rs0`).
+
+Esto permite utilizar transacciones durante la creación de reservas y la eliminación de eventos. La eliminación comprueba la existencia del evento y de reservas asociadas mediante `exists`, y elimina únicamente si no encuentra reservas, dentro de la misma sesión transaccional.
+
+El proceso de reserva realiza la actualización de entradas disponibles y la creación de la reserva dentro de una transacción:
+
+```text
+Solicitud de reserva
+        ↓
+Validar y disminuir entradas
+        ↓
+Crear reserva
+        ↓
+Confirmar transacción
+```
+
+Si alguna operación falla, la transacción se revierte.
+
+Además, la actualización de disponibilidad se realiza de forma atómica para evitar inconsistencias ante reservas concurrentes.
+
+## Acceso de administrador
+
+Los usuarios registrados públicamente reciben el rol `user`.
+
+Para probar las funcionalidades administrativas se puede cambiar manualmente un usuario a `admin` en MongoDB.
+
+Utilizando Docker:
+
+```bash
+docker exec -it ticket-reservation-mongodb mongosh ticket-reservation
+```
+
+Luego:
+
+```javascript
+db.users.updateOne(
+  { email: "admin@example.com" },
+  { $set: { role: "admin" } }
+)
+```
+
+Reemplazar el correo por el usuario registrado.
+
+Después del cambio se debe cerrar sesión e iniciar nuevamente para obtener una nueva sesión con el rol actualizado.
+
+## Manejo de errores
+
+La API utiliza códigos HTTP apropiados según cada situación:
+
+- `400 Bad Request`
+- `401 Unauthorized`
+- `403 Forbidden`
+- `404 Not Found`
+- `409 Conflict`
+- `500 Internal Server Error`
+
+Las validaciones, autenticación y autorización se encuentran separadas mediante middlewares.
+
+## Pruebas
+
+Las pruebas están en `test/*.test.ts`. `pnpm test` ejecuta `node --import tsx --test test/*.test.ts`. La suite contiene 18 tests: bcrypt, JWT, validación inicial de reservas, protección de eliminación, filtros por usuario y serialización. Las consultas/transacciones de los tests de servicios se simulan con mocks; no son pruebas de concurrencia ni de integración contra MongoDB real.
+
+```bash
+pnpm test
+```
+
+## Build de producción
+
+Generar el proyecto compilado:
 
 ```bash
 pnpm build
@@ -131,279 +296,51 @@ Ejecutar la versión compilada:
 pnpm start
 ```
 
-## Ejecución con Docker
+## Imagen de producción
 
-El backend puede ejecutarse junto con MongoDB utilizando Docker Compose.
+El Dockerfile utiliza dos etapas con `node:22-bookworm-slim` y Corepack. Instala con pnpm y `--frozen-lockfile`; el builder compila TypeScript a `dist/`. La etapa final instala solo dependencias de producción, copia `dist/`, expone 3000 y ejecuta `pnpm start`. `.dockerignore` excluye `.env`, `node_modules`, `dist` y `.git`.
 
-El proyecto incluye:
+El Compose usa `mongo:7.0`, healthcheck, `mongo-init` y el volumen `mongodb_data`. El backend espera que la inicialización termine con código 0. El frontend se construye desde `../fullstack-technical-test-frontend` y publica `5173:80`.
 
-- Dockerfile para el backend.
-- Contenedor de MongoDB.
-- Replica set de MongoDB inicializado automáticamente.
-- Docker Compose para levantar el entorno requerido por el backend.
+`VITE_API_URL=http://localhost:3000` se incorpora en el build del frontend porque las peticiones salen del navegador. El backend se conecta internamente a `mongodb:27017`. Compose toma `JWT_SECRET` del `.env` local y mantiene `FRONTEND_URL` configurable, con `http://localhost:5173` por defecto.
 
-Crear previamente un archivo `.env` con las variables necesarias. Para Docker se requiere al menos:
-
-```env
-JWT_SECRET=your-secret-key
-FRONTEND_URL=http://localhost:5173
-```
-
-Levantar los servicios:
-
-```bash
-docker compose up --build
-```
-
-Los servicios estarán disponibles en:
+## Arquitectura con Docker
 
 ```text
-Backend -> http://localhost:3000
-MongoDB -> localhost:27017
+Navegador
+    │
+    ▼
+Frontend
+React + Nginx
+    │
+    │ HTTP / JSON
+    ▼
+Backend
+Node.js + Express
+    │
+    │ Mongoose
+    ▼
+MongoDB
+Replica Set rs0
 ```
 
-El servicio `mongo-init` inicializa automáticamente el replica set requerido para utilizar transacciones de MongoDB.
+## Seguridad
 
-No es necesario configurar el replica set manualmente.
+Se implementaron las siguientes medidas:
 
-Para detener los servicios:
+- Contraseñas almacenadas mediante bcrypt.
+- Autenticación mediante JWT.
+- Protección de rutas privadas.
+- Autorización por roles.
+- Identidad de las reservas obtenida desde el usuario autenticado.
+- Variables sensibles mediante variables de entorno.
+- `.env` excluido del repositorio.
+- CORS limitado al origen configurado del frontend.
+
+## Gestor de paquetes
+
+El proyecto utiliza exclusivamente pnpm.
 
 ```bash
-docker compose down
+pnpm install
 ```
-
-Para detener los servicios y eliminar también el volumen local de MongoDB:
-
-```bash
-docker compose down -v
-```
-
-> `docker compose down -v` elimina los datos almacenados en el volumen local de MongoDB.
-
-## API
-
-La URL base durante el desarrollo local es:
-
-```text
-http://localhost:3000
-```
-
-### Autenticación
-
-#### Registrar usuario
-
-```http
-POST /auth/register
-```
-
-Ejemplo:
-
-```json
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "password123"
-}
-```
-
-Los usuarios registrados públicamente reciben el rol `user`.
-
-#### Iniciar sesión
-
-```http
-POST /auth/login
-```
-
-Ejemplo:
-
-```json
-{
-  "email": "john@example.com",
-  "password": "password123"
-}
-```
-
-La autenticación devuelve un token JWT.
-
-Para acceder a endpoints protegidos se debe enviar:
-
-```http
-Authorization: Bearer <token>
-```
-
----
-
-### Eventos
-
-#### Listar eventos
-
-```http
-GET /events
-```
-
-#### Obtener evento por ID
-
-```http
-GET /events/:id
-```
-
-#### Crear evento
-
-```http
-POST /events
-```
-
-Requiere autenticación y rol `admin`.
-
-Ejemplo:
-
-```json
-{
-  "name": "Tech Conference",
-  "date": "2026-09-20",
-  "location": "Guayaquil",
-  "availableTickets": 100
-}
-```
-
-#### Actualizar evento
-
-```http
-PUT /events/:id
-```
-
-#### Eliminar evento
-
-```http
-DELETE /events/:id
-```
-
-Requiere autenticación y rol `admin`.
-
----
-
-### Reservas
-
-#### Crear reserva
-
-```http
-POST /reservations
-```
-
-Requiere autenticación mediante JWT.
-
-Ejemplo:
-
-```json
-{
-  "eventId": "EVENT_ID",
-  "quantity": 2
-}
-```
-
-El `userId` no se recibe desde el cuerpo de la petición. Se obtiene directamente del usuario autenticado mediante el token JWT.
-
-Si el evento no dispone de suficientes tickets, la operación es rechazada y la reserva no se crea.
-
-## Consistencia y concurrencia en reservas
-
-La creación de una reserva utiliza una transacción de MongoDB para mantener sincronizada la creación de la reserva con la actualización de tickets disponibles.
-
-La disponibilidad se modifica mediante una operación atómica que comprueba que existan suficientes tickets antes de realizar el decremento.
-
-De esta manera se evita que solicitudes concurrentes puedan generar una sobreventa de tickets.
-
-MongoDB se ejecuta como replica set dentro del entorno Docker debido a que las transacciones requieren esta configuración.
-
-## Autenticación y roles
-
-El sistema dispone de dos roles:
-
-```text
-user
-admin
-```
-
-El registro público crea únicamente usuarios con rol:
-
-```text
-user
-```
-
-Las operaciones administrativas de eventos requieren un usuario con rol `admin`.
-
-Para pruebas durante el desarrollo, el rol de un usuario puede modificarse directamente en MongoDB.
-
-## Tests
-
-El proyecto incluye tests unitarios utilizando el runner nativo de Node.js y `tsx` para ejecutar TypeScript.
-
-Ejecutar:
-
-```bash
-pnpm test
-```
-
-Actualmente existen **11 tests unitarios** que cubren:
-
-- Hash de contraseñas.
-- Validación de contraseñas correctas e incorrectas.
-- Generación de JWT.
-- Verificación de JWT.
-- Recuperación de `userId` y roles desde el token.
-- Validación de firma JWT.
-- Manejo de ausencia de `JWT_SECRET`.
-- Validaciones principales de las reservas.
-- Validación de identificadores de eventos.
-- Validación de cantidades de tickets inválidas.
-
-Los tests unitarios no requieren MongoDB ni Docker para ejecutarse.
-
-## Scripts disponibles
-
-```bash
-pnpm dev
-pnpm build
-pnpm start
-pnpm test
-```
-
-| Script | Descripción |
-| --- | --- |
-| `pnpm dev` | Ejecuta el backend en modo desarrollo |
-| `pnpm build` | Compila TypeScript |
-| `pnpm start` | Ejecuta la versión compilada |
-| `pnpm test` | Ejecuta los tests unitarios |
-
-## Consideraciones técnicas
-
-- TypeScript está configurado en modo estricto.
-- Las contraseñas se almacenan utilizando bcrypt.
-- JWT se utiliza para autenticar endpoints protegidos.
-- Los permisos administrativos se validan mediante roles.
-- El `userId` de una reserva se obtiene desde el usuario autenticado y no desde datos enviados por el cliente.
-- Las entradas de la API son validadas antes de procesarse.
-- Las reservas utilizan transacciones de MongoDB.
-- La disponibilidad de tickets utiliza actualizaciones atómicas para prevenir sobreventa.
-- MongoDB utiliza un replica set para permitir transacciones.
-- Las variables sensibles se administran mediante variables de entorno.
-- El entorno Docker inicializa automáticamente la configuración necesaria de MongoDB.
-
-## Validación del proyecto
-
-Durante el desarrollo el backend fue validado mediante:
-
-- Pruebas manuales de los endpoints.
-- Pruebas de autenticación y autorización.
-- Pruebas de creación de reservas.
-- Pruebas de disponibilidad de tickets.
-- Pruebas de concurrencia en reservas.
-- 11 tests unitarios automatizados.
-- Compilación de TypeScript.
-- Ejecución completa mediante Docker Compose.
-
-## Autor
-
-**Christian Arguello**
-
-Prueba técnica - Fullstack Software Developer

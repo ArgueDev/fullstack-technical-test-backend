@@ -56,5 +56,17 @@ services:
       mongo-init:
         condition: service_completed_successfully
 
+  frontend:
+    build:
+      context: ../fullstack-technical-test-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: http://localhost:3000
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
 volumes:
   mongodb_data:
