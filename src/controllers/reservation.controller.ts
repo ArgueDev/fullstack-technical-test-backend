@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 
-import { createReservation } from '../services/reservation.service.js';
+import { createReservation, getReservationsByUser } from '../services/reservation.service.js';
 
 export const postReservation = async (req: Request, res: Response): Promise<void> => {
 
@@ -68,5 +68,19 @@ export const postReservation = async (req: Request, res: Response): Promise<void
                     message: 'Error al crear la reserva',
                 });
         }
+    }
+};
+
+export const getMyReservations = async (req: Request, res: Response): Promise<void> => {
+    if (!req.user) {
+        res.status(401).json({ message: 'No autorizado' });
+        return;
+    }
+
+    try {
+        const reservations = await getReservationsByUser(req.user.id);
+        res.status(200).json(reservations);
+    } catch {
+        res.status(500).json({ message: 'Error al consultar las reservas' });
     }
 };

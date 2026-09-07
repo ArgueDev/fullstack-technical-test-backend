@@ -1,6 +1,6 @@
-import mongoose from 'mongoose';
+import mongoose, { type HydratedDocument } from 'mongoose';
 
-import EventModel from '../models/event.model.js';
+import EventModel, { type Event } from '../models/event.model.js';
 import ReservationModel from '../models/reservation.model.js';
 
 interface CreateReservationInput {
@@ -72,4 +72,17 @@ export const createReservation = async ( data: CreateReservationInput ) => {
   } finally {
     await session.endSession();
   }
+};
+
+type ReservationEvent = HydratedDocument<Pick<Event, 'name' | 'date' | 'location'>>;
+
+export const getReservationsByUser = async (userId: string) => {
+  return ReservationModel.find({ userId })
+    .select('quantity createdAt eventId')
+    .sort({ createdAt: -1, _id: -1 })
+    .populate<{ eventId: ReservationEvent | null }>({
+      path: 'eventId',
+      select: 'name date location',
+    })
+    .exec();
 };
